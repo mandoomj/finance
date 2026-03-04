@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>대장주 비교 대시보드</title>
+    
+    <!-- Tailwind CSS (CDN) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Chart.js (CDN) -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- PapaParse for CSV parsing (CDN) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+
+    <!-- Google Fonts (Pretendard) -->
+    <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+
+    <style>
+        /* 기본 폰트 및 배경 설정 */
+        body {
+            font-family: 'Pretendard', sans-serif;
+            background: linear-gradient(135deg, #0b0f19 0%, #1a1525 50%, #221133 100%);
+            background-attachment: fixed;
+            color: #f8fafc;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* 글래스모피즘(Glassmorphism) 패널 스타일 */
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3), inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+            border-radius: 1.25rem;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .glass-panel:hover {
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4), inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+        }
+
+        /* 커스텀 셀렉트 박스 스타일 */
+        select.glass-select {
+            background: rgba(0, 0, 0, 0.2);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            appearance: none;
+            background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+            background-repeat: no-repeat;
+            background-position: right 1rem center;
+            background-size: 1em;
+        }
+        
+        select.glass-select option {
+            background-color: #1a1525;
+            color: white;
+        }
+
+        /* 테이블 스타일 */
+        table th, table td {
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        /* 스크롤바 커스텀 */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.4); }
+
+        /* 토글 버튼 활성/비활성 스타일 */
+        .btn-active {
+            background-color: rgba(168, 85, 247, 0.8); /* purple-500 */
+            color: white;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        }
+        .btn-inactive {
+            color: #94a3b8; /* slate-400 */
+            background-color: transparent;
+        }
+        .btn-inactive:hover {
+            color: white;
+        }
+    </style>
+</head>
+<body class="antialiased selection:bg-purple-500 selection:text-white">
+
+    <!-- 메인 컨테이너 -->
+    <main class="flex-grow max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 flex flex-col gap-6">
+        
+        <!-- 헤더 섹션 -->
+        <header class="flex flex-col sm:flex-row justify-between items-center gap-4 mb-2 mt-4">
+            <div>
+                <h1 class="text-3xl sm:text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-blue-400 to-purple-400 drop-shadow-sm">
+                    대장주 비교 대시보드
+                </h1>
+                <p class="text-slate-400 mt-2 text-sm sm:text-base">구글 시트 실시간 연동 및 분석 데이터</p>
+            </div>
+            
+            <!-- 종목 선택 필터 (드롭다운) -->
+            <div class="flex gap-3 w-full sm:w-auto">
+                <div class="flex flex-col w-full sm:w-48 relative">
+                    <label class="text-xs text-cyan-300 mb-1 ml-1 font-medium">비교 종목 1 (Cyan)</label>
+                    <select id="stock1-select" class="glass-select rounded-lg py-2.5 px-4 outline-none focus:ring-2 focus:ring-cyan-500 w-full cursor-pointer text-sm">
+                        <option value="">로딩중...</option>
+                    </select>
+                </div>
+                <div class="flex flex-col w-full sm:w-48 relative">
+                    <label class="text-xs text-purple-300 mb-1 ml-1 font-medium">비교 종목 2 (Purple)</label>
+                    <select id="stock2-select" class="glass-select rounded-lg py-2.5 px-4 outline-none focus:ring-2 focus:ring-purple-500 w-full cursor-pointer text-sm">
+                        <option value="">로딩중...</option>
+                    </select>
+                </div>
+            </div>
+        </header>
+
+        <!-- 로딩 표시기 -->
+        <div id="loading-indicator" class="flex justify-center items-center py-20">
+            <div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-500"></div>
+            <span class="ml-4 text-purple-200">데이터를 불러오는 중입니다...</span>
+        </div>
+
+        <!-- 대시보드 콘텐츠 -->
+        <div id="dashboard-content" class="hidden flex-col gap-6">
+            
+            <!-- 상단 요약 카드 영역 -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <!-- 종목 1 카드 -->
+                <div class="glass-panel p-6 relative overflow-hidden">
+                    <div class="absolute top-0 left-0 w-1 h-full bg-cyan-400 shadow-[0_0_10px_#22d3ee]"></div>
+                    <div class="flex justify-between items-start mb-4">
+                        <div>
+                            <h2 id="s1-name" class="text-2xl font-bold text-white">종목명</h2>
+                            <p id="s1-code" class="text-cyan-300 text-sm font-medium mt-1">코드</p>
+                        </div>
+                        <div id="s1-change-badge" class="px-3 py-1 rounded-full text-sm font-bold bg-white/10 border border-white/20">
+                            0.00%
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-3 gap-4 mt-6">
+                        <div>
+                            <p class="text-slate-400 text-xs mb-1">현재가</p>
+                            <p id="s1-current" class="text-xl sm:text-2xl font-bold text-white">0원</p>
+                        </div>
+                        <div>
+                            <p class="text-slate-400 text-xs mb-1">52주 최고가</p>
+                            <p id="s1-high" class="text-lg sm:text-xl text-red-400 font-medium">0원</p>
+                        </div>
+                        <div>
+                            <p class="text-slate-400 text-xs mb-1">52주 최저가</p>
+                            <p id="s1-low" class="text-lg sm:text-xl text-blue-400 font-medium">0원</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 종목 2 카드 -->
+                <div class="glass-panel p-6 relative overflow-hidden">
+                    <div class="absolute top-0 left-0 w-1 h-full bg-purple-400 shadow-[0_0_10px_#c084fc]"></div>
+                    <div class="flex justify-between items-start mb-4">
+                        <div>
+                            <h2 id="s2-name" class="text-2xl font-bold text-white">종목명</h2>
+                            <p id="s2-code" class="text-purple-300 text-sm font-medium mt-1">코드</p>
+                        </div>
+                        <div id="s2-change-badge" class="px-3 py-1 rounded-full text-sm font-bold bg-white/10 border border-white/20">
+                            0.00%
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-3 gap-4 mt-6">
+                        <div>
+                            <p class="text-slate-400 text-xs mb-1">현재가</p>
+                            <p id="s2-current" class="text-xl sm:text-2xl font-bold text-white">0원</p>
+                        </div>
+                        <div>
+                            <p class="text-slate-400 text-xs mb-1">52주 최고가</p>
+                            <p id="s2-high" class="text-lg sm:text-xl text-red-400 font-medium">0원</p>
+                        </div>
+                        <div>
+                            <p class="text-slate-400 text-xs mb-1">52주 최저가</p>
+                            <p id="s2-low" class="text-lg sm:text-xl text-blue-400 font-medium">0원</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 차트 영역 (토글 버튼 추가) -->
+            <div class="glass-panel p-6 w-full h-[450px] flex flex-col">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-semibold text-white">주가 추이 비교 (최근 6개월)</h3>
+                    
+                    <!-- 차트 모드 변경 토글 버튼 -->
+                    <div class="flex bg-black/40 rounded-lg p-1 border border-white/10">
+                        <button id="btn-mode-index" onclick="setChartMode('index')" class="btn-active px-3 py-1.5 text-xs sm:text-sm font-medium rounded-md transition-colors">수익률 (기준 100)</button>
+                        <button id="btn-mode-price" onclick="setChartMode('price')" class="btn-inactive px-3 py-1.5 text-xs sm:text-sm font-medium rounded-md transition-colors">실제 주가</button>
+                    </div>
+                </div>
+                
+                <div class="relative w-full flex-grow">
+                    <canvas id="compareChart"></canvas>
+                </div>
+            </div>
+
+            <!-- 수익률 비교 테이블 영역 -->
+            <div class="glass-panel p-6 overflow-x-auto">
+                <h3 class="text-lg font-semibold mb-4 text-white">기간별 수익률 비교</h3>
+                <table class="w-full text-left text-sm whitespace-nowrap">
+                    <thead>
+                        <tr class="text-slate-300">
+                            <th class="py-3 px-4 font-medium">구분</th>
+                            <th class="py-3 px-4 font-medium text-cyan-300" id="th-s1">종목 1</th>
+                            <th class="py-3 px-4 font-medium text-purple-300" id="th-s2">종목 2</th>
+                            <th class="py-3 px-4 font-medium">수익률 차이 (1 - 2)</th>
+                        </tr>
+                    </thead>
+                    <tbody class="text-white">
+                        <tr class="hover:bg-white/5 transition-colors">
+                            <td class="py-3 px-4 text-slate-400">최근 1개월</td>
+                            <td class="py-3 px-4 font-medium" id="ret-1m-s1">-</td>
+                            <td class="py-3 px-4 font-medium" id="ret-1m-s2">-</td>
+                            <td class="py-3 px-4 font-medium" id="ret-1m-diff">-</td>
+                        </tr>
+                        <tr class="hover:bg-white/5 transition-colors">
+                            <td class="py-3 px-4 text-slate-400">최근 3개월</td>
+                            <td class="py-3 px-4 font-medium" id="ret-3m-s1">-</td>
+                            <td class="py-3 px-4 font-medium" id="ret-3m-s2">-</td>
+                            <td class="py-3 px-4 font-medium" id="ret-3m-diff">-</td>
+                        </tr>
+                        <tr class="hover:bg-white/5 transition-colors">
+                            <td class="py-3 px-4 text-slate-400">최근 6개월</td>
+                            <td class="py-3 px-4 font-medium" id="ret-6m-s1">-</td>
+                            <td class="py-3 px-4 font-medium" id="ret-6m-s2">-</td>
+                            <td class="py-3 px-4 font-medium" id="ret-6m-diff">-</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- 푸터 -->
+    <footer class="py-6 mt-auto text-center">
+        <p class="text-xs text-slate-500 font-medium tracking-wide">
+            &copy; 2026 with dream consulting. All Rights Reserved.
+        </p>
+    </footer>
+
+    <!-- 자바스크립트 로직 -->
+    <script>
+        // CSV 데이터 소스 URL
+        const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQa7k6FTOuyu9CBNOJjyfBTCCwLCHf3bCUYoLj889WitLKVsCZDvZd3jQsjfxt4HXZ8y3DSYTlKmPkm/pub?gid=1643688729&single=true&output=csv";
+        
+        // 전역 상태 변수
+        let stockData = [];
+        let stockHistoryMap = {}; 
+        let chartInstance = null;
+        let currentChartMode = 'index'; // 'index' (수익률 기준 100) 또는 'price' (실제 주가)
+
+        // 초기 실행 함수
+        async function init() {
+            try {
+                Papa.parse(CSV_URL, {
+                    download: true,
+                    header: false,
+                    skipEmptyLines: true,
+                    complete: function(results) {
+                        const rawData = results.data;
+                        if(rawData.length > 0) {
+                            let startIndex = 0;
+                            const firstRowPriceStr = String(rawData[0][2] || '').replace(/[^0-9.-]+/g, '');
+                            if (isNaN(parseFloat(firstRowPriceStr)) || firstRowPriceStr === '') {
+                                startIndex = 1; 
+                            }
+
+                            stockData = rawData.slice(startIndex).map(row => {
+                                const rawPrice = String(row[2] || '0').replace(/[^0-9.-]+/g, '');
+                                const rawChange = String(row[3] || '0').replace(/[^0-9.-]+/g, '');
+                                
+                                let parsedPrice = parseFloat(rawPrice);
+                                let parsedChangeRate = parseFloat(rawChange);
+
+                                return {
+                                    code: row[0]?.trim(),
+                                    name: row[1]?.trim(),
+                                    price: isNaN(parsedPrice) ? 0 : parsedPrice,
+                                    changeRate: isNaN(parsedChangeRate) ? 0 : parsedChangeRate
+                                };
+                            }).filter(item => item.code && item.name && item.price > 0);
+
+                            if(stockData.length > 0) {
+                                generateAllMockHistory();
+                                populateDropdowns();
+                                
+                                document.getElementById('loading-indicator').classList.add('hidden');
+                                document.getElementById('dashboard-content').classList.remove('hidden');
+                                document.getElementById('dashboard-content').classList.add('flex');
+                                
+                                updateDashboard(); 
+                            }
+                        }
+                    },
+                    error: function(err) {
+                        console.error("CSV 파싱 에러:", err);
+                        alert("데이터를 불러오는데 실패했습니다.");
+                    }
+                });
+            } catch (error) {
+                console.error("데이터 로드 에러:", error);
+            }
+        }
+
+        // 가상 과거 데이터 생성 로직
+        function generateAllMockHistory() {
+            stockData.forEach(stock => {
+                let currentVal = stock.price;
+                const history = [];
+                for (let i = 180; i >= 0; i--) {
+                    const date = new Date();
+                    date.setDate(date.getDate() - i);
+                    
+                    if (i !== 0) {
+                        const volatility = (Math.random() - 0.5) * 0.04;
+                        currentVal = currentVal / (1 + volatility); 
+                    } else {
+                        currentVal = stock.price;
+                    }
+                    
+                    history.push({
+                        date: `${date.getMonth() + 1}/${date.getDate()}`,
+                        price: Math.max(1, Math.round(currentVal))
+                    });
+                }
+                stockHistoryMap[stock.code] = history.reverse(); 
+            });
+        }
+
+        // 드롭다운 옵션 채우기
+        function populateDropdowns() {
+            const select1 = document.getElementById('stock1-select');
+            const select2 = document.getElementById('stock2-select');
+            
+            select1.innerHTML = '';
+            select2.innerHTML = '';
+
+            stockData.forEach((stock, index) => {
+                const optionHtml = `<option value="${stock.code}">${stock.name} (${stock.code})</option>`;
+                select1.insertAdjacentHTML('beforeend', optionHtml);
+                select2.insertAdjacentHTML('beforeend', optionHtml);
+            });
+
+            if (stockData.length > 1) {
+                select1.selectedIndex = 0;
+                select2.selectedIndex = 1;
+            }
+
+            select1.addEventListener('change', updateDashboard);
+            select2.addEventListener('change', updateDashboard);
+        }
+
+        // 대시보드 전체 UI 업데이트 함수
+        function updateDashboard() {
+            const code1 = document.getElementById('stock1-select').value;
+            const code2 = document.getElementById('stock2-select').value;
+
+            const s1 = stockData.find(s => s.code === code1);
+            const s2 = stockData.find(s => s.code === code2);
+
+            if (!s1 || !s2) return;
+
+            updateCard('s1', s1);
+            updateCard('s2', s2);
+            updateTable(s1, s2);
+            renderChart(s1, s2);
+        }
+
+        // 숫자 포맷팅
+        function formatNumber(num) {
+            return num.toLocaleString('ko-KR');
+        }
+
+        // 카드 UI 업데이트
+        function updateCard(prefix, stock) {
+            document.getElementById(`${prefix}-name`).textContent = stock.name;
+            document.getElementById(`${prefix}-code`).textContent = stock.code;
+            document.getElementById(`${prefix}-current`).textContent = `${formatNumber(stock.price)}원`;
+
+            const badge = document.getElementById(`${prefix}-change-badge`);
+            const sign = stock.changeRate > 0 ? '+' : '';
+            badge.textContent = `${sign}${stock.changeRate}%`;
+            
+            if (stock.changeRate > 0) {
+                badge.className = "px-3 py-1 rounded-full text-sm font-bold bg-red-500/20 text-red-400 border border-red-500/30";
+            } else if (stock.changeRate < 0) {
+                badge.className = "px-3 py-1 rounded-full text-sm font-bold bg-blue-500/20 text-blue-400 border border-blue-500/30";
+            } else {
+                badge.className = "px-3 py-1 rounded-full text-sm font-bold bg-white/10 text-white border border-white/20";
+            }
+
+            const history = stockHistoryMap[stock.code];
+            const prices = history.map(h => h.price);
+            const high = Math.max(...prices);
+            const low = Math.min(...prices);
+
+            document.getElementById(`${prefix}-high`).textContent = `${formatNumber(high)}원`;
+            document.getElementById(`${prefix}-low`).textContent = `${formatNumber(low)}원`;
+        }
+
+        function formatReturn(value) {
+            const sign = value > 0 ? '+' : '';
+            const colorClass = value > 0 ? 'text-red-400' : (value < 0 ? 'text-blue-400' : 'text-slate-300');
+            return `<span class="${colorClass}">${sign}${value.toFixed(2)}%</span>`;
+        }
+
+        function updateTable(s1, s2) {
+            document.getElementById('th-s1').textContent = s1.name;
+            document.getElementById('th-s2').textContent = s2.name;
+
+            const h1 = stockHistoryMap[s1.code];
+            const h2 = stockHistoryMap[s2.code];
+            const periods = { '1m': 30, '3m': 90, '6m': 180 };
+
+            for (const [key, days] of Object.entries(periods)) {
+                const p1_past = h1[days] ? h1[days].price : h1[h1.length-1].price;
+                const p2_past = h2[days] ? h2[days].price : h2[h2.length-1].price;
+                
+                const ret1 = ((s1.price / p1_past) - 1) * 100;
+                const ret2 = ((s2.price / p2_past) - 1) * 100;
+                const diff = ret1 - ret2;
+
+                document.getElementById(`ret-${key}-s1`).innerHTML = formatReturn(ret1);
+                document.getElementById(`ret-${key}-s2`).innerHTML = formatReturn(ret2);
+                document.getElementById(`ret-${key}-diff`).innerHTML = formatReturn(diff);
+            }
+        }
+
+        // 차트 모드 토글 함수
+        function setChartMode(mode) {
+            currentChartMode = mode;
+            
+            // 버튼 스타일 변경
+            const btnIndex = document.getElementById('btn-mode-index');
+            const btnPrice = document.getElementById('btn-mode-price');
+            
+            if (mode === 'index') {
+                btnIndex.className = "btn-active px-3 py-1.5 text-xs sm:text-sm font-medium rounded-md transition-colors";
+                btnPrice.className = "btn-inactive px-3 py-1.5 text-xs sm:text-sm font-medium rounded-md transition-colors";
+            } else {
+                btnIndex.className = "btn-inactive px-3 py-1.5 text-xs sm:text-sm font-medium rounded-md transition-colors";
+                btnPrice.className = "btn-active px-3 py-1.5 text-xs sm:text-sm font-medium rounded-md transition-colors";
+            }
+            
+            // 차트 다시 그리기
+            updateDashboard();
+        }
+
+        // 차트.js 렌더링 로직
+        function renderChart(s1, s2) {
+            const ctx = document.getElementById('compareChart').getContext('2d');
+            
+            const displayDays = 60;
+            const h1 = stockHistoryMap[s1.code].slice(0, displayDays).reverse(); 
+            const h2 = stockHistoryMap[s2.code].slice(0, displayDays).reverse();
+
+            const labels = h1.map(h => h.date);
+            
+            let data1, data2, labelSuffix, yAxisCallback;
+
+            // [핵심 로직] 모드에 따라 데이터 배열을 다르게 세팅합니다.
+            if (currentChartMode === 'index') {
+                const base1 = h1[0].price;
+                const base2 = h2[0].price;
+                data1 = h1.map(h => (h.price / base1) * 100);
+                data2 = h2.map(h => (h.price / base2) * 100);
+                labelSuffix = ' (기준 100)';
+                yAxisCallback = function(value) { return value; };
+            } else {
+                data1 = h1.map(h => h.price);
+                data2 = h2.map(h => h.price);
+                labelSuffix = ' (실제가격)';
+                yAxisCallback = function(value) { return formatNumber(value) + '원'; };
+            }
+
+            if (chartInstance) {
+                chartInstance.destroy();
+            }
+
+            Chart.defaults.color = 'rgba(255, 255, 255, 0.7)';
+            Chart.defaults.font.family = "'Pretendard', sans-serif";
+
+            chartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: `${s1.name}${labelSuffix}`,
+                            data: data1,
+                            borderColor: '#22d3ee', 
+                            backgroundColor: 'rgba(34, 211, 238, 0.1)',
+                            borderWidth: 2,
+                            pointRadius: 0,
+                            pointHoverRadius: 6,
+                            tension: 0.3, 
+                            fill: true
+                        },
+                        {
+                            label: `${s2.name}${labelSuffix}`,
+                            data: data2,
+                            borderColor: '#c084fc', 
+                            backgroundColor: 'rgba(192, 132, 252, 0.1)',
+                            borderWidth: 2,
+                            pointRadius: 0,
+                            pointHoverRadius: 6,
+                            tension: 0.3,
+                            fill: true
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false,
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                            labels: { usePointStyle: true, boxWidth: 8 }
+                        },
+                        tooltip: {
+                            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                            titleColor: '#fff',
+                            bodyColor: '#fff',
+                            borderColor: 'rgba(255,255,255,0.1)',
+                            borderWidth: 1,
+                            padding: 10,
+                            callbacks: {
+                                label: function(context) {
+                                    let val = context.parsed.y;
+                                    let prefix = context.dataset.label.replace(labelSuffix, '');
+                                    if (currentChartMode === 'price') {
+                                        return `${prefix}: ${formatNumber(val)}원`;
+                                    } else {
+                                        return `${prefix}: ${val.toFixed(2)}`;
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                            ticks: { maxTicksLimit: 10 } 
+                        },
+                        y: {
+                            grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                            ticks: {
+                                callback: yAxisCallback
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>
